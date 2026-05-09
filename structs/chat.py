@@ -39,6 +39,7 @@ class ReasoningLevel(Enum):
 class Message:
     role: Role
     content: str
+    tool_call_id: str = ""
     reasoning_content: str = ""
     tool_calls: List[TCall] = field(default_factory=list)
 
@@ -47,10 +48,19 @@ class Message:
         return Message(
             role=Role.from_str(json_data["role"]),
             content=json_data["content"],
+            tool_call_id=json_data.get("tool_call_id", ""),
             reasoning_content=json_data.get("reasoning_content", ""),
             tool_calls=[TCall.parse(tool) for tool in json_data.get("tool_calls", [])]
         )
 
+    def to_dict(self) -> dict:
+        return {
+            "role": self.role.value,
+            "content": self.content,
+            "tool_call_id": self.tool_call_id,
+            "reasoning_content": self.reasoning_content,
+            "tool_calls": [tool.to_dict() for tool in self.tool_calls]
+        }
 
 @dataclass
 class ThinkingOption:
@@ -58,22 +68,23 @@ class ThinkingOption:
 
 @dataclass
 class ChatRequest:
-  model: Model
-  messages: List[Message]
-  thinking: ThinkingOption
-  reasoning_effort: ReasoningLevel
-  stream: bool
-  tools: List[Tool]
+    model: Model
+    messages: List[Message]
+    thinking: ThinkingOption
+    reasoning_effort: ReasoningLevel
+    stream: bool
+    tools: List[Tool]
 
-  def to_json(self) -> str:
-    return json.dumps({
-      "model": self.model.value,
-      "messages": [{"role": msg.role.value, "content": msg.content} for msg in self.messages],
-      "thinking": {"type": self.thinking.type},
-      "reasoning_effort": self.reasoning_effort.value,
-      "stream": self.stream,
-      "tools": [tool.to_dict() for tool in self.tools],
-    })
+    def to_json(self) -> str:
+        return json.dumps({
+            "model": self.model.value,
+            "messages": [msg.to_dict() for msg in self.messages],
+            "thinking": {"type": self.thinking.type},
+            "reasoning_effort": self.reasoning_effort.value,
+            "stream": self.stream,
+            "tools": [tool.to_dict() for tool in self.tools],
+        })
+
 
 class Purpose(Enum):
     ChatCompletion = "chat.completion"

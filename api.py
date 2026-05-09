@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from structs.chat import ChatRequest, Message, Role, ThinkingOption, ReasoningLevel, Model, ChatResponse, FinishReason
 from structs.tool import Tool, Type as ToolType, Function as ToolFunction, Parameters as ToolParameters, ParameterType, InputType, Properties as ToolProperties
 from common.http import make_http_request
+from toolbox import SQLite
 import json
 
 class DeepseekAPI:
@@ -54,7 +55,6 @@ class DeepseekAPI:
         chat_response = ChatResponse.parse(result.json())
         print("Assistant:", chat_response.get_first_message().content)
 
-        # Now let's ask a follow-up question
         follow_up_request = ChatRequest(
             model=Model.DeepseekV4Flash,
             messages=[
@@ -99,7 +99,7 @@ class DeepseekAPI:
           model=Model.DeepseekV4Flash,
           messages=[
             Message(role=Role.System, content="You are a helpful assistant."),
-            Message(role=Role.User, content="What is the weather in Nice,France?"),
+            Message(role=Role.User, content="What is the weather in Nice, France?"),
           ],
           thinking=ThinkingOption(type="enabled"),
           reasoning_effort=ReasoningLevel.Low,
@@ -120,11 +120,58 @@ class DeepseekAPI:
 
         print("response:", response.get_first_message().tool_calls)
 
+    def sqlite_tool_call(self):
+        messages=[
+          Message(role=Role.System, content="You are a helpful assistant."),
+          Message(role=Role.User, content="Create a database called test_db. Create user table with name, email, created at and updated at columns. Insert several instances. Show me all users in database."),
+        ]
+        chat_request = ChatRequest(
+          model=Model.DeepseekV4Flash,
+          messages=messages,
+          thinking=ThinkingOption(type="enabled"),
+          reasoning_effort=ReasoningLevel.Low,
+          stream=False,
+          tools=SQLite.get_all_tools()
+        )
+
+        result = make_http_request(
+            method="POST",
+            url=self.chat_completions_endpoint,
+            headers=self.headers,
+            data=chat_request.to_json())
+        response = ChatResponse.parse(result.json())
+
+        while response.get_stopped_reason() == FinishReason.ToolCalls:
+            assistant_message = response.get_first_message()
+            messages.append(assistant_message)
+            for tool_call in response.get_first_message().tool_calls:
+                tool_result = SQLite.run_tool(tool_call.function.name, tool_call.function.arguments)
+                messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
+        
+            chat_request = ChatRequest(
+                model=Model.DeepseekV4Flash,
+                messages=messages,
+                thinking=ThinkingOption(type="enabled"),
+                reasoning_effort=ReasoningLevel.Low,
+                stream=False,
+                tools=SQLite.get_all_tools()
+            )
+
+            result = make_http_request(
+                method="POST",
+                url=self.chat_completions_endpoint,
+                headers=self.headers,
+                data=chat_request.to_json())
+            response = ChatResponse.parse(result.json())
+        
+        print("Stopped Reason:", response.get_stopped_reason())
+        print("Final response:", response.get_first_message().content)
+
 if __name__ == "__main__":
     # Example usage
     load_dotenv()
     # api_key = normalize_api_key(os.getenv("DEEPSEEK_API"))
     api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
-    result = api.tool_call().json()
+    api.sqlite_tool_call()
 
     

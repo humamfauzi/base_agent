@@ -75,6 +75,15 @@ class FunctionCall:
             name=map["name"],
             arguments=argument,
         )
+    
+    def to_dict(self) -> dict:
+        arguments = self.arguments
+        if type(arguments) == dict:
+            arguments = json.dumps(arguments)
+        return {
+            "name": self.name,
+            "arguments": arguments
+        }
 
 @dataclass
 class Call:
@@ -91,3 +100,11 @@ class Call:
             type=Type(map["type"]),
             function=FunctionCall.parse(map["function"])
         )
+
+    def to_dict(self) -> dict:
+        return {
+            "index": self.index,
+            "id": self.id,
+            "type": self.type.value,
+            "function": self.function.to_dict()
+        }
