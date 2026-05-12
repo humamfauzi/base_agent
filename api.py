@@ -170,7 +170,6 @@ class DeepseekAPI:
 if __name__ == "__main__":
     # Example usage
     load_dotenv()
-    # api_key = normalize_api_key(os.getenv("DEEPSEEK_API"))
     api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
     api.sqlite_tool_call()
 
