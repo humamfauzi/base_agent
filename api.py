@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from structs.chat import ChatRequest, Message, Role, ThinkingOption, ReasoningLevel, Model, ChatResponse, FinishReason
 from structs.tool import Tool, Type as ToolType, Function as ToolFunction, Parameters as ToolParameters, ParameterType, InputType, Properties as ToolProperties
 from common.http import make_http_request
-from toolbox import SQLite
+from toolbox import SQLite, DocumentParser, FileManager
 import json
 
 class DeepseekAPI:
@@ -121,6 +121,7 @@ class DeepseekAPI:
         print("response:", response.get_first_message().tool_calls)
 
     def sqlite_tool_call(self):
+        tool_definitions = SQLite.get_all_tools()
         messages=[
           Message(role=Role.System, content="You are a helpful assistant."),
           Message(role=Role.User, content="Create a database called test_db. Create user table with name, email, created at and updated at columns. Insert several instances. Show me all users in database."),
@@ -131,8 +132,9 @@ class DeepseekAPI:
           thinking=ThinkingOption(type="enabled"),
           reasoning_effort=ReasoningLevel.Low,
           stream=False,
-          tools=SQLite.get_all_tools()
+          tools=tool_definitions
         )
+        tool_map = SQLite.tool_map()
 
         result = make_http_request(
             method="POST",
@@ -145,7 +147,7 @@ class DeepseekAPI:
             assistant_message = response.get_first_message()
             messages.append(assistant_message)
             for tool_call in response.get_first_message().tool_calls:
-                tool_result = SQLite.run_tool(tool_call.function.name, tool_call.function.arguments)
+                tool_result = tool_map[tool_call.function.name](**tool_call.function.arguments)
                 messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
         
             chat_request = ChatRequest(
@@ -154,7 +156,59 @@ class DeepseekAPI:
                 thinking=ThinkingOption(type="enabled"),
                 reasoning_effort=ReasoningLevel.Low,
                 stream=False,
-                tools=SQLite.get_all_tools()
+                tools=tool_definitions
+            )
+
+            result = make_http_request(
+                method="POST",
+                url=self.chat_completions_endpoint,
+                headers=self.headers,
+                data=chat_request.to_json())
+            response = ChatResponse.parse(result.json())
+        
+        print("Stopped Reason:", response.get_stopped_reason())
+        print("Final response:", response.get_first_message().content)
+
+    def pdf_parser(self):
+        tool_definitions = [
+            *DocumentParser.get_all_tools(),
+            *FileManager.get_all_tools()
+        ]
+        tool_maps = {**DocumentParser.tool_map(), **FileManager.tool_map()}
+        messages=[
+          Message(role=Role.System, content="You are a helpful assistant."),
+          Message(role=Role.User, content="check artifacts folder and find the PDF file. Extract the text from the PDF file and save the markdown file."),
+        ]
+
+        chat_request = ChatRequest(
+          model=Model.DeepseekV4Flash,
+          messages=messages,
+          thinking=ThinkingOption(type="enabled"),
+          reasoning_effort=ReasoningLevel.Low,
+          stream=False,
+          tools=tool_definitions
+        )
+
+        result = make_http_request(
+            method="POST",
+            url=self.chat_completions_endpoint,
+            headers=self.headers,
+            data=chat_request.to_json())
+        response = ChatResponse.parse(result.json())
+        while response.get_stopped_reason() == FinishReason.ToolCalls:
+            assistant_message = response.get_first_message()
+            messages.append(assistant_message)
+            for tool_call in response.get_first_message().tool_calls:
+                tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
+                messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
+        
+            chat_request = ChatRequest(
+                model=Model.DeepseekV4Flash,
+                messages=messages,
+                thinking=ThinkingOption(type="enabled"),
+                reasoning_effort=ReasoningLevel.Low,
+                stream=False,
+                tools=tool_definitions
             )
 
             result = make_http_request(
@@ -170,7 +224,8 @@ class DeepseekAPI:
 if __name__ == "__main__":
     # Example usage
     load_dotenv()
+    print("Quickcheck", os.getenv("HF_TOKEN")[:5])
     api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
-    api.sqlite_tool_call()
+    api.pdf_parser()
 
     
