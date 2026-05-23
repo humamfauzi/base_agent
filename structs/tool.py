@@ -11,6 +11,7 @@ class ParameterType(Enum):
 
 class InputType(Enum):
     String = "string"
+    Integer = "integer"
 
 @dataclass
 class Properties:

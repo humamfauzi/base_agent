@@ -5,6 +5,17 @@ import subprocess
 import json
 import os
 from typing import List
+from common.llm import (
+    SupportedProvider,
+    LLMToolkit,
+)
+
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
+# Force use of the raw PDFium engine instead of the V4 layout engine
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+
 from structs.tool import (
     Tool,
     Type,
@@ -221,7 +232,20 @@ class ReadDocument:
         if not os.path.exists(file_path):
             raise ValueError("File does not exist")
 
-        converter = DocumentConverter()
+        pipeline_options = PdfPipelineOptions()
+        
+        pipeline_options.do_ocr = False
+        pipeline_options.do_table_structure = True
+        pipeline_options.images_scale = 1.0
+        
+        converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pipeline_options,
+                    backend=PyPdfiumDocumentBackend,
+                )
+            }
+        )
         result = converter.convert(file_path)
         markdown_content = result.document.export_to_markdown()
 
@@ -310,12 +334,60 @@ class ReadFolder:
         return files
 
 
+class ReadFile:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="read_file",
+                description="Read the content of a file at a specified path. Also has option to specify max byte to read and offset to read from.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "file_path": Properties(
+                            type=InputType.String,
+                            description="The file path of the file to read.",
+                        ),
+                        "max_bytes": Properties(
+                            type=InputType.Integer,
+                            description="The maximum number of bytes to read from the file.",
+                        ),
+                        "offset": Properties(
+                            type=InputType.Integer,
+                            description="The byte offset from which to start reading.",
+                        ),
+                    },
+                    required=["file_path"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(file_path: str, max_bytes: int = None, offset: int = 0 ) -> str:
+        if not os.path.exists(file_path):
+            raise ValueError("File does not exist")
+        if not os.path.isfile(file_path):
+            raise ValueError("Provided path is not a file")
+        
+        try:
+            with open(file_path, "rb") as f:
+                if offset:
+                    f.seek(offset)
+                if max_bytes:
+                    content = f.read(max_bytes)
+                else:
+                    content = f.read()
+            return content
+        except Exception as e:
+            raise ValueError(f"Error reading file: {str(e)} in file path {file_path}")
+
 class FileManager:
     @staticmethod
     def get_all_tools() -> List[Tool]:
         return [
             SaveFile().get_tool_manifest(),
             ReadFolder().get_tool_manifest(),
+            ReadFile().get_tool_manifest(),
         ]
 
     @staticmethod
@@ -323,6 +395,7 @@ class FileManager:
         return {
             "save_file": SaveFile.execute,
             "read_folder": ReadFolder.execute,
+            "read_file": ReadFile.execute,
         }
 
     @staticmethod
@@ -332,3 +405,77 @@ class FileManager:
             return tool_mapping[tool_name](**arguments)
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
+
+
+class Semantic:
+    def __init__(self, provider, api_key):
+        if provider not in SupportedProvider:
+            raise ValueError(f"Unsupported provider: {provider}")
+        self.toolkit = LLMToolkit(provider, api_key)
+        self.relationship_extraction = RelationshipExtraction(self.toolkit)
+        self.paragraph_extractor = ParagraphExtractor(self.toolkit)
+
+    def get_all_tools(self) -> List[Tool]:
+        return [
+            self.relationship_extraction.get_tool_manifest(),
+            self.paragraph_extractor.get_tool_manifest(),
+        ]
+
+    def tool_map(self):
+        return {
+            "relationship_extraction": self.relationship_extraction.execute,
+            "paragraph_extractor": self.paragraph_extractor.execute,
+        }
+
+class RelationshipExtraction:
+    def __init__(self, toolkit: LLMToolkit):
+        self.toolkit = toolkit
+
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="relationship_extraction",
+                description="Extract relationships between entities mentioned in the user query. Return a list of relationships, where each relationship is represented as a dictionary with 'entity1', 'entity2', and 'relationship' keys.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "content": Properties(
+                            type=InputType.String,
+                            description="The user query from which to extract relationships.",
+                        )
+                    },
+                    required=["content"],
+                ),
+            ),
+        )
+
+    def execute(self, content: str):
+        return self.toolkit.relationship_extraction(content)
+
+
+class ParagraphExtractor:
+    def __init__(self, toolkit: LLMToolkit):
+        self.toolkit = toolkit
+
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="paragraph_extractor",
+                description="Extract paragraphs from the user query. Return a list of paragraphs, where each paragraph is a string.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "content": Properties(
+                            type=InputType.String,
+                            description="The user query from which to extract paragraphs.",
+                        )
+                    },
+                    required=["content"],
+                ),
+            ),
+        )
+
+    def execute(self, content: str):
+        return self.toolkit.paragraph_extractor(content)
