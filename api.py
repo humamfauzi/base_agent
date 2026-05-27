@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Any
 from dotenv import load_dotenv
 from structs.chat import ChatRequest, Message, Role, ThinkingOption, ReasoningLevel, Model, ChatResponse, FinishReason
 from structs.tool import (Tool, 
@@ -13,6 +14,7 @@ from structs.tool import (Tool,
 from common.http import make_http_request
 from common.llm import SupportedProvider
 from toolbox import SQLite, DocumentParser, FileManager, Semantic as ToolSemantic, RelationshipExtraction, ParagraphExtractor
+from toolbox.file_manager import ReadFolder
 import json
 
 class DeepseekAPI:
@@ -21,6 +23,16 @@ class DeepseekAPI:
         self.base_url = "https://api.deepseek.com"
         self.chat_completions_endpoint = f"{self.base_url}/chat/completions"
         self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+    @staticmethod
+    def _serialize_tool_result(tool_result: Any) -> str:
+        if isinstance(tool_result, bytes):
+            return tool_result.decode("utf-8", errors="replace")
+
+        if isinstance(tool_result, (dict, list, tuple, bool, int, float)) or tool_result is None:
+            return json.dumps(tool_result)
+
+        return str(tool_result)
   
     def quick_start(self):
         chat_request = ChatRequest(
@@ -157,7 +169,7 @@ class DeepseekAPI:
             messages.append(assistant_message)
             for tool_call in response.get_first_message().tool_calls:
                 tool_result = tool_map[tool_call.function.name](**tool_call.function.arguments)
-                messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
+                messages.append(Message(role=Role.Tool, content=self._serialize_tool_result(tool_result), tool_call_id=tool_call.id))
         
             chat_request = ChatRequest(
                 model=Model.DeepseekV4Flash,
@@ -181,18 +193,19 @@ class DeepseekAPI:
     def pdf_parser(self):
         tool_definitions = [
             *DocumentParser.get_all_tools(),
-            *FileManager.get_all_tools()
+            ReadFolder().get_tool_manifest(),
         ]
-        tool_maps = {**DocumentParser.tool_map(), **FileManager.tool_map()}
+        tool_maps = {**DocumentParser.tool_map(), "read_folder": ReadFolder.execute}
         messages=[
           Message(role=Role.System, content="You are a helpful assistant."),
           Message(role=Role.User, content="""
             - check the artifacts folder
             - ensure the existance of PDF file.
-            - use the pdf parser tool to extract the text from the PDF file.
+            - use the read_document tool to parse the whole PDF file.
             - DO NOT read the pdf file and pass it as a message. only pass the directory.
-            - Save the parsed file with the same name but with .md extension.
-            - DO NOT read the markdown file and pass it as a message. only pass the directory.
+            - The read_document tool already saves the full parsed output as a markdown file with the same name and a .md extension.
+            - Return only the saved file path and a short summary. Do not read the markdown content and pass it as a message.
+            - Only choose the one that hasnt been parsed before. If all files already parsed, end process
             """),
         ]
 
@@ -218,7 +231,7 @@ class DeepseekAPI:
             print("Tool call", [tool_call.function.name for tool_call in response.get_first_message().tool_calls])
             for tool_call in response.get_first_message().tool_calls:
                 tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
-                messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
+                messages.append(Message(role=Role.Tool, content=self._serialize_tool_result(tool_result), tool_call_id=tool_call.id))
         
             chat_request = ChatRequest(
                 model=Model.DeepseekV4Flash,
@@ -283,7 +296,7 @@ class DeepseekAPI:
             print("Tool call", [tool_call.function.name for tool_call in response.get_first_message().tool_calls])
             for tool_call in response.get_first_message().tool_calls:
                 tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
-                messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
+                messages.append(Message(role=Role.Tool, content=self._serialize_tool_result(tool_result), tool_call_id=tool_call.id))
         
             chat_request = ChatRequest(
                 model=Model.DeepseekV4Flash,

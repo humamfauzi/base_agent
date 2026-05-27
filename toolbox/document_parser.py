@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Any, List
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -21,14 +21,18 @@ class ReadDocument:
             type=Type.Function,
             function=Function(
                 name="read_document",
-                description="Read the content of a document given its file path.",
+                description="Parse an entire PDF document, save the full Markdown output to disk, and return only compact metadata about the saved file.",
                 parameters=Parameters(
                     type=ParameterType.Object,
                     properties={
                         "file_path": Properties(
                             type=InputType.String,
-                            description="The file path of the document to read.",
-                        )
+                            description="The file path of the PDF document to parse.",
+                        ),
+                        "output_path": Properties(
+                            type=InputType.String,
+                            description="Optional output path for the saved Markdown file. Defaults to the source file path with a .md extension.",
+                        ),
                     },
                     required=["file_path"],
                 ),
@@ -36,15 +40,26 @@ class ReadDocument:
         )
     
     @staticmethod
-    def execute(file_path: str) -> str:
+    def execute(file_path: str, output_path: str = "") -> dict[str, Any]:
         if not file_path:
             raise ValueError("file_path is required")
+
+        if not os.path.exists(file_path):
+            raise ValueError("File does not exist")
+
+        if not os.path.isfile(file_path):
+            raise ValueError("Provided path is not a file")
 
         if os.path.getsize(file_path) > 10 * 1024 * 1024:  # 10 MB size limit
             raise ValueError("File size exceeds the 10 MB limit")
 
-        if not os.path.exists(file_path):
-            raise ValueError("File does not exist")
+        if not output_path:
+            source_root, _ = os.path.splitext(file_path)
+            output_path = f"{source_root}.md"
+
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         pipeline_options = PdfPipelineOptions()
         
@@ -62,8 +77,16 @@ class ReadDocument:
         )
         result = converter.convert(file_path)
         markdown_content = result.document.export_to_markdown()
+        with open(output_path, "w", encoding="utf-8") as markdown_file:
+            markdown_file.write(markdown_content)
 
-        return markdown_content
+        return {
+            "status": "saved",
+            "source_path": file_path,
+            "output_path": output_path,
+            "markdown_characters": len(markdown_content),
+            "markdown_bytes": os.path.getsize(output_path),
+        }
 
 
 class DocumentParser:
