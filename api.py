@@ -186,7 +186,14 @@ class DeepseekAPI:
         tool_maps = {**DocumentParser.tool_map(), **FileManager.tool_map()}
         messages=[
           Message(role=Role.System, content="You are a helpful assistant."),
-          Message(role=Role.User, content="check artifacts folder and find the PDF file. Extract the text from the PDF file and save the markdown file."),
+          Message(role=Role.User, content="""
+            - check the artifacts folder
+            - ensure the existance of PDF file.
+            - use the pdf parser tool to extract the text from the PDF file.
+            - DO NOT read the pdf file and pass it as a message. only pass the directory.
+            - Save the parsed file with the same name but with .md extension.
+            - DO NOT read the markdown file and pass it as a message. only pass the directory.
+            """),
         ]
 
         chat_request = ChatRequest(
@@ -207,11 +214,12 @@ class DeepseekAPI:
         while response.get_stopped_reason() == FinishReason.ToolCalls:
             assistant_message = response.get_first_message()
             messages.append(assistant_message)
+
+            print("Tool call", [tool_call.function.name for tool_call in response.get_first_message().tool_calls])
             for tool_call in response.get_first_message().tool_calls:
                 tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
                 messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
         
-            print("messages", messages)
             chat_request = ChatRequest(
                 model=Model.DeepseekV4Flash,
                 messages=messages,
@@ -233,8 +241,6 @@ class DeepseekAPI:
 
     def extract_markdown(self):
         semtools = ToolSemantic(SupportedProvider.DEEPSEEK, self.api_key)
-        re = RelationshipExtraction(semtools)
-        pe = ParagraphExtractor(semtools)
         tool_definitions = [*semtools.get_all_tools(), *FileManager.get_all_tools()]
         tool_maps = {**semtools.tool_map(), **FileManager.tool_map()}
         primary_command = """
@@ -249,7 +255,7 @@ class DeepseekAPI:
         """
         messages=[
           Message(role=Role.System, content="You are a helpful financial assistant who posses expert knowledge in financial documents."),
-          Message(role=Role.User, content="check the folder artifacts and read the markdown. Only read partially if the file is too long. Extract the paragraphs. and Extract the relationships between entities mentioned in the markdown and extract the paragraphs. All relationship should be in one single word. Remove all relationship excess in parentheses. The final relationship should be in form of JSON"),
+          Message(role=Role.User, content=primary_command),
         ]
 
         start = time.time()
@@ -274,6 +280,7 @@ class DeepseekAPI:
         while response.get_stopped_reason() == FinishReason.ToolCalls:
             assistant_message = response.get_first_message()
             messages.append(assistant_message)
+            print("Tool call", [tool_call.function.name for tool_call in response.get_first_message().tool_calls])
             for tool_call in response.get_first_message().tool_calls:
                 tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
                 messages.append(Message(role=Role.Tool, content=str(tool_result), tool_call_id=tool_call.id))
@@ -310,8 +317,8 @@ def quick_fn():
 if __name__ == "__main__":
     # Example usage
     load_dotenv()
-    print("Quickcheck", os.getenv("HF_TOKEN")[:5])
-    # api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
-    # api.pdf_parser()
+    # print("Quickcheck", os.getenv("API_KEY")[:5])
+    api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
+    api.pdf_parser()
 
-    quick_fn() 
+    # quick_fn() 

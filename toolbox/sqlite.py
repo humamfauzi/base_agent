@@ -1,0 +1,183 @@
+import sqlite3
+import subprocess
+import json
+from typing import List
+from structs.tool import (
+    Tool,
+    Type,
+    Function,
+    Parameters,
+    ParameterType,
+    Properties,
+    InputType,
+)
+
+
+class ShowTables:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="show_tables",
+                description="List all table names in a SQLite database.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "db_path": Properties(
+                            type=InputType.String,
+                            description="Path to the SQLite database file.",
+                        )
+                    },
+                    required=["db_path"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(db_path: str) -> List[str]:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return tables
+
+
+class CreateDatabase:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="create_database",
+                description="Create a new SQLite database file.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "db_name": Properties(
+                            type=InputType.String,
+                            description="Database name without extension.",
+                        )
+                    },
+                    required=["db_name"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(db_name: str) -> bool:
+        db_path = f"{db_name}.db"
+        subprocess.run(["sqlite3", db_path], input=b"", check=True)
+        return True
+
+    @staticmethod
+    def success(db_name: str) -> str:
+        return f"Database {db_name}.db created successfully."
+
+
+class InsertIntoTable:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="insert_into_table",
+                description="Insert one record into a SQLite table.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "db_path": Properties(
+                            type=InputType.String,
+                            description="Path to the SQLite database file.",
+                        ),
+                        "table_name": Properties(
+                            type=InputType.String,
+                            description="Target table name.",
+                        ),
+                        "data": Properties(
+                            type=InputType.String,
+                            description="JSON object string containing column/value pairs.",
+                        ),
+                    },
+                    required=["db_path", "table_name", "data"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(db_path: str, table_name: str, data: str) -> bool:
+        if type(data) == str:
+            data = json.loads(data)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        columns = ", ".join(data.keys())
+        placeholders = ", ".join(["?"] * len(data))
+        values = list(data.values())
+        cursor.execute(f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})", values)
+        conn.commit()
+        conn.close()
+        return True
+
+
+class QueryTable:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="query_table",
+                description="Execute a SQL query against a SQLite database.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "db_path": Properties(
+                            type=InputType.String,
+                            description="Path to the SQLite database file.",
+                        ),
+                        "query": Properties(
+                            type=InputType.String,
+                            description="SQL query to execute.",
+                        ),
+                    },
+                    required=["db_path", "query"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(db_path: str, query: str) -> List[tuple]:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        results = cursor.fetchall()
+        conn.close()
+        return results
+
+
+class SQLite:
+    """
+    Collection for interacting with SQLite databases. Can be used to execute SQL queries and return results.
+    All should be a static method; it behaves like a collection of functions.
+    """
+    @staticmethod
+    def get_all_tools() -> List[Tool]:
+        return [
+            ShowTables().get_tool_manifest(),
+            CreateDatabase().get_tool_manifest(),
+            InsertIntoTable().get_tool_manifest(),
+            QueryTable().get_tool_manifest(),
+        ]
+
+    @staticmethod
+    def tool_map():
+        return {
+            "show_tables": ShowTables.execute,
+            "create_database": CreateDatabase.execute,
+            "insert_into_table": InsertIntoTable.execute,
+            "query_table": QueryTable.execute,
+        }
+
+    @staticmethod
+    def run_tool(tool_name, arguments):
+        tool_mapping = SQLite.tool_map()
+        if tool_name in tool_mapping:
+            return tool_mapping[tool_name](**arguments)
+        else:
+            raise ValueError(f"Unknown tool: {tool_name}")

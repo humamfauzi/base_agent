@@ -150,7 +150,7 @@ def _download_easyocr(output_dir: Path | None, force: bool) -> Path:
 
 def main() -> int:
     load_dotenv()
-    print("HF_TOKEN", os.getenv("HF_TOKEN")[:5])
+    print("HF_API_KEY", os.getenv("HF_API_KEY")[:5])
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
