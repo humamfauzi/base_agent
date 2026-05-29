@@ -81,6 +81,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "docling" },
     { name = "dotenv" },
+    { name = "falkordb" },
     { name = "requests" },
 ]
 
@@ -88,6 +89,7 @@ dependencies = [
 requires-dist = [
     { name = "docling", specifier = ">=2.95.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "falkordb", specifier = ">=1.6.1" },
     { name = "requests", specifier = ">=2.34.0" },
 ]
 
@@ -479,6 +481,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/15/01/28c8ddae8caaf82c929655000963d83e3f01265a9af34e823c2ef2eee8ac/faker-40.19.1.tar.gz", hash = "sha256:76fa71fd3bf320db25e5504eb356f9a76b8a95cd6098524d006f446035b6b89d", size = 1969318, upload-time = "2026-05-22T15:57:37.433Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/b4/40a1ec12ec834604f3848143343baf1c67bc9a1096e401907eaa0d25876a/faker-40.19.1-py3-none-any.whl", hash = "sha256:265259b37c013838baaae34940207288170df385d6c5281413fce56a3504d580", size = 2007643, upload-time = "2026-05-22T15:57:35.867Z" },
+]
+
+[[package]]
+name = "falkordb"
+version = "1.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/3a/58da510e5800a5cdbf9591111e4287cbf68b475bf074db12a94e5db8bcea/falkordb-1.6.1.tar.gz", hash = "sha256:bbef448a0b43e00ff3062bd6201368618d7b36e969d16ba71e8b8e3fa90873d4", size = 103185, upload-time = "2026-04-28T13:24:44.524Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/02/1cf9cef72228ca2b2776b4ed0cb2645298ddcc57c1fe2c545cd46bc11eae/falkordb-1.6.1-py3-none-any.whl", hash = "sha256:cf51caeb433c04db303de5967a0c2590675fcc0354e80997870b1e0497d30c34", size = 37802, upload-time = "2026-04-28T13:24:45.677Z" },
 ]
 
 [[package]]
@@ -1647,6 +1662,15 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ea/4a/fa521d947f0fc7bb304bf11bec4cb66266bd81494588b4cb48dc01001719/rapidocr-3.8.1-py3-none-any.whl", hash = "sha256:650044b1fbce9e6bae5cae462dcf8be754cde11e2f23fc51f65dcc08deae2c46", size = 15080319, upload-time = "2026-04-11T07:13:22.56Z" },
+]
+
+[[package]]
+name = "redis"
+version = "8.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/ae/ed461cca5780b5fc8b9fe8ca0ed98d89508645fb9d880c24cc42c087678f/redis-8.0.0.tar.gz", hash = "sha256:a00c5355432051ac14e593b8b197fc76c887ee12d55a0984f69328a1115fdc49", size = 5101591, upload-time = "2026-05-28T12:45:13.5Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/e3/b519734372d305bd547534a9f32e4ce9f98552af753dce72cf3483a0ff0b/redis-8.0.0-py3-none-any.whl", hash = "sha256:c938c18338585009f0bc310f4c7e4e4b4d37639356c4ac072cedf3af570c8dc7", size = 499870, upload-time = "2026-05-28T12:45:11.697Z" },
 ]
 
 [[package]]
