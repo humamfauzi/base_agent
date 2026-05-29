@@ -1,4 +1,5 @@
 from enum import Enum
+import time
 from common.http import make_http_request
 from structs.chat import ChatRequest, Message, Role, ThinkingOption, ReasoningLevel, Model, ChatResponse, FinishReason
 
@@ -33,12 +34,14 @@ class LLMToolkit:
           stream=False,
           tools=[]
         )
-
+        start = time.time()
         result = make_http_request(
             method="POST",
             url=self.chat_completions_endpoint,
             headers=self.headers,
             data=chat_request.to_json())
+        end = time.time()
+        print(f"""Time taken for relationship extraction: {end - start:.2f} seconds""")
         return result
 
     def paragraph_extractor(self, content: str):
@@ -60,9 +63,63 @@ class LLMToolkit:
           tools=[]
         )
 
+        start = time.time()
         result = make_http_request(
             method="POST",
             url=self.chat_completions_endpoint,
             headers=self.headers,
             data=chat_request.to_json())
+        end = time.time()
+        print(f"""Time taken for paragraph extraction: {end - start:.2f} seconds""")
+        return result
+
+    def untangler(self, content: str):
+        """
+            This is an example of using LLM to untangle complex sentences from a given text.
+            The system prompt instructs the LLM to return a list of simpler sentences that convey the same meaning as the original complex sentence. 
+            The user content is the complex sentence that we want to untangle. 
+            The LLM will return a list of simpler sentences that are easier to understand.
+        """
+        system_content = """
+            You are an expert text-restoration assistant. Your sole task is to repair text that has had its spacing corrupted, merged, or stripped out (often called "jumbled" or "untangled" text).
+
+        """
+        user_content = f"""
+            Review the input text and insert spaces where they logically and grammatically belong to make it perfectly readable English.
+
+            Strict Rules:
+            1. Do NOT alter, add, or omit any words.
+            2. Preserve all original punctuation (commas, periods, colons, parentheses, hyphens).
+            3. Preserve original paragraph breaks if any exist.
+            4. Correct ONLY the spacing errors. Do not attempt to "fix" slang, grammar, or author style.
+            5. Output ONLY the repaired text. Do not include any introductory remarks, explanations, or markdown code blocks.
+            6. Use markdown formatting for the output, ensuring that all sentences are properly spaced and formatted for readability.
+            7. If the input text is not jumbled and is already perfectly readable, simply return it as is without any modifications.
+
+            Input Text:
+            Here is the text to untangle:
+            {content}
+
+            Please return the untangled text in markdown format, ensuring that all sentences are properly spaced and formatted for readability.
+        """
+        chat_request = ChatRequest(
+          model=Model.DeepseekV4Flash,
+          messages=[
+            Message(role=Role.System, content=system_content),
+            Message(role=Role.User, content=user_content),
+          ],
+          thinking=ThinkingOption(type="enabled"),
+          reasoning_effort=ReasoningLevel.Medium,
+          stream=False,
+          tools=[]
+        )
+
+        start = time.time()
+        result = make_http_request(
+            method="POST",
+            url=self.chat_completions_endpoint,
+            headers=self.headers,
+            data=chat_request.to_json())
+        end = time.time()
+        print(f"""Time taken for untangling: {end - start:.2f} seconds""")
         return result

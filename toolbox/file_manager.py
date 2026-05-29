@@ -41,6 +41,36 @@ class SaveFile:
             f.write(content)
         return f"Content saved to {file_path} successfully."
 
+class SaveFileAppend:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="save_file_append",
+                description="Append content to a file at a specified path. If the file does not exist, it will be created.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "file_path": Properties(
+                            type=InputType.String,
+                            description="The file path where the content should be appended.",
+                        ),
+                        "content": Properties(
+                            type=InputType.String,
+                            description="The content to append to the file.",
+                        ),
+                    },
+                    required=["file_path", "content"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(file_path: str, content: str) -> str:
+        with open(file_path, "a") as f:
+            f.write(content)
+        return f"Content appended to {file_path} successfully."
+
 
 class ReadFolder:
     def get_tool_manifest(self) -> Tool:
@@ -126,6 +156,7 @@ class FileManager:
     def get_all_tools() -> List[Tool]:
         return [
             SaveFile().get_tool_manifest(),
+            SaveFileAppend().get_tool_manifest(),
             ReadFolder().get_tool_manifest(),
             ReadFile().get_tool_manifest(),
         ]
@@ -134,6 +165,7 @@ class FileManager:
     def tool_map():
         return {
             "save_file": SaveFile.execute,
+            "save_file_append": SaveFileAppend.execute,
             "read_folder": ReadFolder.execute,
             "read_file": ReadFile.execute,
         }

@@ -203,6 +203,7 @@ class DeepseekAPI:
             - ensure the existance of PDF file.
             - use the read_document tool to parse the whole PDF file.
             - DO NOT read the pdf file and pass it as a message. only pass the directory.
+            - Check the document type first. If it is full of text, then use the read_document tool. If it is scanned document, then use the read_document_ocr tool.
             - The read_document tool already saves the full parsed output as a markdown file with the same name and a .md extension.
             - Return only the saved file path and a short summary. Do not read the markdown content and pass it as a message.
             - Only choose the one that hasnt been parsed before. If all files already parsed, end process
@@ -321,6 +322,71 @@ class DeepseekAPI:
         end = time.time()
         print(f"""Time taken final for response: {end - start} seconds. Contains {len(messages)} messages.""")
 
+    def untangle_rolling(self):
+        semtools = ToolSemantic(SupportedProvider.DEEPSEEK, self.api_key)
+        tool_definitions = [*semtools.get_all_tools(), *FileManager.get_all_tools()]
+        tool_maps = {**semtools.tool_map(), **FileManager.tool_map()}
+        primary_command = """
+           - Read the artifacts/lobsterarticle.md 
+           - Chunk the article into a segemnted bytes based on the token limit. You can use 1000 tokens as a chunk size for safety.
+           - For each chunk, call the entangler tools with the chunk content as input.
+           - Once untangled, save the content in a markdown file in the same directory with the name lobsterarticle_untangled.md. If the file already exists, append to it.
+           - Keep doing this until you finish the whole article. Do not read the whole article at once, only chunk by chunk.
+        """
+        messages=[
+          Message(role=Role.System, content="You are a helpful assistant."),
+          Message(role=Role.User, content=primary_command),
+        ]
+
+        start = time.time()
+
+        chat_request = ChatRequest(
+          model=Model.DeepseekV4Flash,
+          messages=messages,
+          thinking=ThinkingOption(type="enabled"),
+          reasoning_effort=ReasoningLevel.Low,
+          stream=False,
+          tools=tool_definitions
+        )
+
+        result = make_http_request(
+            method="POST",
+            url=self.chat_completions_endpoint,
+            headers=self.headers,
+            data=chat_request.to_json())
+        end = time.time()
+        print(f"""Time taken for first response: {end - start:.2f} seconds. Contains {len(messages)} messages.""")
+        response = ChatResponse.parse(result.json())
+        while response.get_stopped_reason() == FinishReason.ToolCalls:
+            assistant_message = response.get_first_message()
+            messages.append(assistant_message)
+            for tool_call in response.get_first_message().tool_calls:
+                print("Tool call", tool_call.function.name, "with arguments", tool_call.function.arguments)
+                tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
+                messages.append(Message(role=Role.Tool, content=self._serialize_tool_result(tool_result), tool_call_id=tool_call.id))
+        
+            chat_request = ChatRequest(
+                model=Model.DeepseekV4Flash,
+                messages=messages,
+                thinking=ThinkingOption(type="enabled"),
+                reasoning_effort=ReasoningLevel.Low,
+                stream=False,
+                tools=tool_definitions
+            )
+
+            result = make_http_request(
+                method="POST",
+                url=self.chat_completions_endpoint,
+                headers=self.headers,
+                data=chat_request.to_json())
+            response = ChatResponse.parse(result.json())
+            end = time.time()
+            print(f"""Time taken for response: {end - start:.2f} seconds. Contains {len(messages)} messages.""")
+        
+        print("Stopped Reason:", response.get_stopped_reason())
+        print("Final response:", response.get_first_message().content)
+        end = time.time()
+        print(f"""Time taken final for response: {end - start:.2f} seconds. Contains {len(messages)} messages.""")
 
 def quick_fn():
     result = DocumentParser.tool_map()["read_document"]("artifacts/fund.pdf")
@@ -332,6 +398,6 @@ if __name__ == "__main__":
     load_dotenv()
     # print("Quickcheck", os.getenv("API_KEY")[:5])
     api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
-    api.pdf_parser()
+    api.untangle_rolling()
 
     # quick_fn() 

@@ -64,25 +64,53 @@ class ParagraphExtractor:
     def execute(self, content: str):
         return self.toolkit.paragraph_extractor(content)
 
+class Untangler:
+    def __init__(self, toolkit: LLMToolkit):
+        self.toolkit = toolkit
 
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="untangler",
+                description="Some text here maybe jumbled e.g. missing characters, doesnt have spaces, numbered in weird place. Untangle the text and return the corrected version. Use markdown format",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "content": Properties(
+                            type=InputType.String,
+                            description="The string user query to untangle.",
+                        )
+                    },
+                    required=["content"],
+                ),
+            ),
+        )
+
+    def execute(self, content: str):
+        return self.toolkit.untangler(content)
+
+
+from common.llm import SupportedProvider
 class Semantic:
     def __init__(self, provider, api_key):
-        from common.llm import SupportedProvider
         
         if provider not in SupportedProvider:
             raise ValueError(f"Unsupported provider: {provider}")
         self.toolkit = LLMToolkit(provider, api_key)
         self.relationship_extraction = RelationshipExtraction(self.toolkit)
         self.paragraph_extractor = ParagraphExtractor(self.toolkit)
-
+        self.untangler = Untangler(self.toolkit)
     def get_all_tools(self) -> List[Tool]:
         return [
             self.relationship_extraction.get_tool_manifest(),
             self.paragraph_extractor.get_tool_manifest(),
+            self.untangler.get_tool_manifest(),
         ]
 
     def tool_map(self):
         return {
             "relationship_extraction": self.relationship_extraction.execute,
             "paragraph_extractor": self.paragraph_extractor.execute,
+            "untangler": self.untangler.execute,
         }
