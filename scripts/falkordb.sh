@@ -13,6 +13,7 @@ set -euo pipefail
 CONTAINER_NAME="falkordb"
 IMAGE="falkordb/falkordb:latest"
 PORT="6379"
+UI_PORT="3000"
 
 DATA_DIR="$(pwd)/falkordb-data"
 NETWORK="falkordb-net"
@@ -29,22 +30,52 @@ create_network() {
     fi
 }
 
+container_exists() {
+    docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}\$"
+}
+
+container_has_expected_ports() {
+    local db_mapping
+    local ui_mapping
+
+    db_mapping="$(docker port "$CONTAINER_NAME" 6379/tcp 2>/dev/null || true)"
+    ui_mapping="$(docker port "$CONTAINER_NAME" 3000/tcp 2>/dev/null || true)"
+
+    [[ "$db_mapping" == *":${PORT}" ]]
+    [[ "$ui_mapping" == *":${UI_PORT}" ]]
+}
+
+remove_existing_container() {
+    if docker ps --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}\$"; then
+        echo "[INFO] Stopping existing container..."
+        docker stop "$CONTAINER_NAME" >/dev/null
+    fi
+
+    echo "[INFO] Removing existing container..."
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+}
+
 start_container() {
     mkdir -p "$DATA_DIR"
 
     create_network
 
-    if docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}\$"; then
+    if container_exists; then
         echo "[INFO] Container already exists."
 
-        if ! docker ps --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}\$"; then
-            echo "[INFO] Starting existing container..."
-            docker start "$CONTAINER_NAME"
+        if ! container_has_expected_ports; then
+            echo "[INFO] Recreating container to apply updated port mappings..."
+            remove_existing_container
         else
-            echo "[INFO] Container already running."
-        fi
+            if ! docker ps --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}\$"; then
+                echo "[INFO] Starting existing container..."
+                docker start "$CONTAINER_NAME"
+            else
+                echo "[INFO] Container already running."
+            fi
 
-        return
+            return
+        fi
     fi
 
     echo "[INFO] Starting FalkorDB container..."
@@ -53,6 +84,7 @@ start_container() {
         --name "$CONTAINER_NAME" \
         --network "$NETWORK" \
         -p "${PORT}:6379" \
+        -p "${UI_PORT}:3000" \
         -v "${DATA_DIR}:/data" \
         --restart unless-stopped \
         "$IMAGE"
@@ -60,6 +92,8 @@ start_container() {
     echo "[INFO] FalkorDB started."
     echo "[INFO] Persistent data directory:"
     echo "       $DATA_DIR"
+    echo "[INFO] Database endpoint: localhost:${PORT}"
+    echo "[INFO] Browser UI:        http://localhost:${UI_PORT}"
 }
 
 stop_container() {
@@ -68,7 +102,10 @@ stop_container() {
 }
 
 restart_container() {
-    stop_container
+    if container_exists; then
+        remove_existing_container
+    fi
+
     start_container
 }
 

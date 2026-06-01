@@ -13,7 +13,7 @@ from structs.tool import (Tool,
 )
 from common.http import make_http_request
 from common.llm import SupportedProvider
-from toolbox import SQLite, DocumentParser, FileManager, Semantic as ToolSemantic, RelationshipExtraction, ParagraphExtractor
+from toolbox import SQLite, DocumentParser, FileManager, Semantic as ToolSemantic, FalkorDB as ToolFalkorDB
 from toolbox.file_manager import ReadFolder
 import json
 
@@ -253,74 +253,6 @@ class DeepseekAPI:
         print("Stopped Reason:", response.get_stopped_reason())
         print("Final response:", response.get_first_message().content)
 
-    def extract_markdown(self):
-        semtools = ToolSemantic(SupportedProvider.DEEPSEEK, self.api_key)
-        tool_definitions = [*semtools.get_all_tools(), *FileManager.get_all_tools()]
-        tool_maps = {**semtools.tool_map(), **FileManager.tool_map()}
-        primary_command = """
-            - check the folder artifacts and read the markdown. 
-            - Only read partially if the file is too long. 
-            - Extract the paragraphs. 
-            - Extract the relationships between entities mentioned in the markdown and extract the paragraphs. 
-            - This includes the number and its units.
-            - All relationship should be in one single word. 
-            - Remove all relationship excess in parentheses. 
-            - The final relationship should be in form of JSON. It has key of source, target and relationship.
-        """
-        messages=[
-          Message(role=Role.System, content="You are a helpful financial assistant who posses expert knowledge in financial documents."),
-          Message(role=Role.User, content=primary_command),
-        ]
-
-        start = time.time()
-
-        chat_request = ChatRequest(
-          model=Model.DeepseekV4Flash,
-          messages=messages,
-          thinking=ThinkingOption(type="enabled"),
-          reasoning_effort=ReasoningLevel.Low,
-          stream=False,
-          tools=tool_definitions
-        )
-
-        result = make_http_request(
-            method="POST",
-            url=self.chat_completions_endpoint,
-            headers=self.headers,
-            data=chat_request.to_json())
-        end = time.time()
-        print(f"""Time taken for first response: {end - start} seconds. Contains {len(messages)} messages.""")
-        response = ChatResponse.parse(result.json())
-        while response.get_stopped_reason() == FinishReason.ToolCalls:
-            assistant_message = response.get_first_message()
-            messages.append(assistant_message)
-            print("Tool call", [tool_call.function.name for tool_call in response.get_first_message().tool_calls])
-            for tool_call in response.get_first_message().tool_calls:
-                tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
-                messages.append(Message(role=Role.Tool, content=self._serialize_tool_result(tool_result), tool_call_id=tool_call.id))
-        
-            chat_request = ChatRequest(
-                model=Model.DeepseekV4Flash,
-                messages=messages,
-                thinking=ThinkingOption(type="enabled"),
-                reasoning_effort=ReasoningLevel.Low,
-                stream=False,
-                tools=tool_definitions
-            )
-
-            result = make_http_request(
-                method="POST",
-                url=self.chat_completions_endpoint,
-                headers=self.headers,
-                data=chat_request.to_json())
-            response = ChatResponse.parse(result.json())
-            end = time.time()
-            print(f"""Time taken for response: {end - start} seconds. Contains {len(messages)} messages.""")
-        
-        print("Stopped Reason:", response.get_stopped_reason())
-        print("Final response:", response.get_first_message().content)
-        end = time.time()
-        print(f"""Time taken final for response: {end - start} seconds. Contains {len(messages)} messages.""")
 
     def untangle_rolling(self):
         semtools = ToolSemantic(SupportedProvider.DEEPSEEK, self.api_key)
@@ -388,16 +320,90 @@ class DeepseekAPI:
         end = time.time()
         print(f"""Time taken final for response: {end - start:.2f} seconds. Contains {len(messages)} messages.""")
 
-def quick_fn():
-    result = DocumentParser.tool_map()["read_document"]("artifacts/fund.pdf")
-    with open("artifacts/fund.md", "w") as f:
-        f.write(result)
+    def extract_markdown(self):
+        semtools = ToolSemantic(SupportedProvider.DEEPSEEK, self.api_key)
+        falkordb = ToolFalkorDB( host="localhost", port=6379, graph_name="default")
+        tool_definitions = [*semtools.get_all_tools(), *FileManager.get_all_tools(), *falkordb.get_all_tools()]
+        tool_maps = {**semtools.tool_map(), **FileManager.tool_map(), **falkordb.tool_map()}
+        primary_command = """
+            - check the folder artifacts and open bni_idx30. 
+            - check the size of markdown file. If it is larger than 3000 tokens, read it in chunks. If not, read the whole content at once.
+            - read the markdown content using 3000 tokens.
+            - extract all paragraphs
+            - establish a relation ship including
+                - entities to entities
+                - entities to number
+                - entities to data
+            - save the relationship in json format in the same folder under name relationship.json
+            - save the extracted content in a graph database. you can use the falkordb for that.
+            - once saved you can continue the roll.
+            - keep the result message as small as possible but contain all necessary information
+            - all relationship should be in lower case
+        """
+        messages=[
+          Message(role=Role.System, content="You are a helpful financial assistant who posses expert knowledge in financial documents."),
+          Message(role=Role.User, content=primary_command),
+        ]
+
+        start = time.time()
+
+        chat_request = ChatRequest(
+          model=Model.DeepseekV4Flash,
+          messages=messages,
+          thinking=ThinkingOption(type="enabled"),
+          reasoning_effort=ReasoningLevel.Low,
+          stream=False,
+          tools=tool_definitions
+        )
+
+        result = make_http_request(
+            method="POST",
+            url=self.chat_completions_endpoint,
+            headers=self.headers,
+            data=chat_request.to_json())
+        end = time.time()
+        print(f"""Time taken for first response: {end - start} seconds. Contains {len(messages)} messages.""")
+        response = ChatResponse.parse(result.json())
+        while response.get_stopped_reason() == FinishReason.ToolCalls:
+            assistant_message = response.get_first_message()
+            messages.append(assistant_message)
+            for tool_call in response.get_first_message().tool_calls:
+                tool_result = tool_maps[tool_call.function.name](**tool_call.function.arguments)
+                messages.append(Message(role=Role.Tool, content=self._serialize_tool_result(tool_result), tool_call_id=tool_call.id))
+        
+            chat_request = ChatRequest(
+                model=Model.DeepseekV4Flash,
+                messages=messages,
+                thinking=ThinkingOption(type="enabled"),
+                reasoning_effort=ReasoningLevel.Low,
+                stream=False,
+                tools=tool_definitions
+            )
+
+            result = make_http_request(
+                method="POST",
+                url=self.chat_completions_endpoint,
+                headers=self.headers,
+                data=chat_request.to_json())
+            response = ChatResponse.parse(result.json())
+            end = time.time()
+            print({
+                "time": f"{end - start:.2f} seconds",
+                "message_count": len(messages),
+                "tool_calls": [(tool_call.function.name, tool_call.function.arguments) for tool_call in response.get_first_message().tool_calls],
+                "last_message": response.get_first_message().content
+            })
+        
+        print("Stopped Reason:", response.get_stopped_reason())
+        print("Final response:", response.get_first_message().content)
+        end = time.time()
+        print(f"""Time taken final for response: {end - start} seconds. Contains {len(messages)} messages.""")
 
 if __name__ == "__main__":
     # Example usage
     load_dotenv()
     # print("Quickcheck", os.getenv("API_KEY")[:5])
     api = DeepseekAPI(os.getenv("DEEPSEEK_API"))
-    api.untangle_rolling()
+    api.extract_markdown()
 
     # quick_fn() 

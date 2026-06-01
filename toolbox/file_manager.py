@@ -150,6 +150,41 @@ class ReadFile:
         except Exception as e:
             raise ValueError(f"Error reading file: {str(e)} in file path {file_path}")
 
+class TotalFilesBytes:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="total_files_bytes",
+                description="Calculate the total size in bytes of a file.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "file_path": Properties(
+                            type=InputType.String,
+                            description="The path of the file to calculate total bytes for.",
+                        )
+                    },
+                    required=["file_path"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(file_path: str) -> int:
+        if not os.path.exists(file_path):
+            raise ValueError("File does not exist")
+        if not os.path.isfile(file_path):
+            raise ValueError("Provided path is a folder")
+        
+        total_bytes = 0
+        try:
+            total_bytes = os.path.getsize(file_path)
+        except Exception as e:
+            raise ValueError(f"Error calculating file size: {str(e)} in file path {file_path}")
+        
+        return total_bytes
+
 
 class FileManager:
     @staticmethod
