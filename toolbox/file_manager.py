@@ -185,6 +185,93 @@ class TotalFilesBytes:
         
         return total_bytes
 
+class GetTotalDivisions:
+    def get_tool_manifest(self) -> Tool:
+        return Tool(
+            type=Type.Function,
+            function=Function(
+                name="get_total_divisions",
+                description="Given a maximum number of bytes, return chunk read instructions with file_path, offset, and max_bytes while preferring paragraph boundaries.",
+                parameters=Parameters(
+                    type=ParameterType.Object,
+                    properties={
+                        "file_path": Properties(
+                            type=InputType.String,
+                            description="The path of the file to calculate total divisions for.",
+                        ),
+                        "max_tokens": Properties(
+                            type=InputType.Integer,
+                            description="The maximum chunk size in bytes.",
+                        ),
+                    },
+                    required=["file_path", "max_tokens"],
+                ),
+            ),
+        )
+    
+    @staticmethod
+    def execute(file_path: str, max_tokens: int) -> List[dict]:
+        if not os.path.exists(file_path):
+            raise ValueError("File does not exist")
+        if not os.path.isfile(file_path):
+            raise ValueError("Provided path is a folder")
+        if max_tokens <= 0:
+            raise ValueError("max_tokens must be greater than 0")
+        
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+
+            total_bytes = len(content)
+            if total_bytes == 0:
+                return []
+
+            read_plan = []
+            offset = 0
+            while offset < total_bytes:
+                target_end = min(offset + max_tokens, total_bytes)
+
+                if target_end == total_bytes:
+                    chunk_end = total_bytes
+                else:
+                    window = content[offset:target_end]
+
+                    paragraph_end = window.rfind(b"\n\n")
+                    paragraph_separator_size = 2
+                    paragraph_end_crlf = window.rfind(b"\r\n\r\n")
+                    if paragraph_end_crlf > paragraph_end:
+                        paragraph_end = paragraph_end_crlf
+                        paragraph_separator_size = 4
+
+                    if paragraph_end != -1:
+                        chunk_end = offset + paragraph_end + paragraph_separator_size
+                    else:
+                        line_end = window.rfind(b"\n")
+                        if line_end != -1:
+                            chunk_end = offset + line_end + 1
+                        else:
+                            word_end = window.rfind(b" ")
+                            if word_end != -1:
+                                chunk_end = offset + word_end + 1
+                            else:
+                                chunk_end = target_end
+
+                if chunk_end <= offset:
+                    chunk_end = target_end
+
+                read_plan.append(
+                    {
+                        "file_path": file_path,
+                        "offset": offset,
+                        "max_bytes": chunk_end - offset,
+                    }
+                )
+                offset = chunk_end
+
+            return read_plan
+        except Exception as e:
+            raise ValueError(f"Error calculating total divisions: {str(e)} in file path {file_path}")
+
 
 class FileManager:
     @staticmethod
@@ -194,6 +281,7 @@ class FileManager:
             SaveFileAppend().get_tool_manifest(),
             ReadFolder().get_tool_manifest(),
             ReadFile().get_tool_manifest(),
+            GetTotalDivisions().get_tool_manifest(),
         ]
 
     @staticmethod
@@ -203,6 +291,7 @@ class FileManager:
             "save_file_append": SaveFileAppend.execute,
             "read_folder": ReadFolder.execute,
             "read_file": ReadFile.execute,
+            "get_total_divisions": GetTotalDivisions.execute,
         }
 
     @staticmethod

@@ -22,6 +22,11 @@ class LLMToolkit:
         system_content = """
             You are a helpful assistant that extracts relationships between entities mentioned in the user query. You should return a list of relationships, where each relationship is represented as a dictionary with 'entity1', 'entity2', and 'relationship' keys. 
             For example, if the user query is "Alice is Bob's sister and works at Acme Corp.", you should return: [{"entity1": "Alice", "entity2": "Bob", "relationship": "sister"}, {"entity1": "Alice", "entity2": "Acme Corp.", "relationship": "works at"}]
+            - All relahionship should be in the format of verb or verb phrase. For example, "is" is not a valid relationship, but "is_sister_of" is a valid relationship.
+            - All entity should be returned without any punctuation. For example, "Bob's" should be returned as "bob".
+            - All entity and relationship should be returned in lowercase. For example, "Alice" should be returned as "alice".
+            - all relationship should be use the basic form of the verb. For example, "works at" should be returned as "work at".
+            - all entity and relationship should be separated by underscore if they contain multiple words. For example, "Acme Corp." should be returned as "acme_corp".
         """
         chat_request = ChatRequest(
           model=Model.DeepseekV4Flash,
@@ -71,6 +76,42 @@ class LLMToolkit:
             data=chat_request.to_json())
         end = time.time()
         print(f"""Time taken for paragraph extraction: {end - start:.2f} seconds""")
+        return result
+
+    def translate(self, fromm :str, to: str, content: str):
+        """
+            This is an example of using LLM to translate text from one language to another. The system prompt instructs the LLM to return a translated version of the input text, where the source language and target language are specified in the user content. The LLM will return the translated text in the target language.
+        """
+        system_content = """
+            You are a helpful assistant that translates text from one language to another. You should return a translated version of the input text, where the source language and target language are specified in the user content. 
+        """
+        user_content = f"""
+            Please translate the following text from {fromm} to {to}:
+
+            {content}
+
+            Return only the translated text without any additional explanations or formatting.
+        """
+        chat_request = ChatRequest(
+          model=Model.DeepseekV4Flash,
+          messages=[
+            Message(role=Role.System, content=system_content),
+            Message(role=Role.User, content=user_content),
+          ],
+          thinking=ThinkingOption(type="enabled"),
+          reasoning_effort=ReasoningLevel.Low,
+          stream=False,
+          tools=[]
+        )
+
+        start = time.time()
+        result = make_http_request(
+            method="POST",
+            url=self.chat_completions_endpoint,
+            headers=self.headers,
+            data=chat_request.to_json())
+        end = time.time()
+        print(f"""Time taken for translation: {end - start:.2f} seconds""")
         return result
 
     def untangler(self, content: str):
